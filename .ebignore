@@ -1,0 +1,15 @@
+node_modules/
+.git/
+.gitignore
+.env
+.env.local
+*.md
+coverage/
+.nyc_output/
+.DS_Store
+dist/
+.ebextensions/
+docker-compose.yml
+Dockerfile
+.dockerignore
+
