@@ -8,13 +8,12 @@ import { Favorite } from '../favorites/entities/favorite.entity';
 @Module({
   imports: [
     TypeOrmModule.forRoot({
-      type: 'sqlite',
-      database: process.env.DATABASE_URL?.replace('sqlite:', '') || process.env.DATABASE_PATH || './chefgpt.db',
+      type: 'better-sqlite3',
+      database: process.env.DATABASE_PATH || './chefgpt.db',
       entities: [User, Profile, Recipe, Favorite],
       synchronize: true,
-      logging: false,
+      logging: true, // Cambiado a true para ver qué pasa
     }),
   ],
 })
 export class DatabaseModule {}
-
