@@ -28,14 +28,22 @@ export class RecipesController {
     });
   }
 
+  /**
+   * 🆕 Genera una receta con IA y opcionalmente la guarda automáticamente
+   * Por defecto, autoSave = true (guarda la receta)
+   * Para solo generar sin guardar, enviar { autoSave: false }
+   */
   @Post('ai')
   async generateRecipe(
     @Body() generateRecipeDto: GenerateRecipeDto,
     @CurrentUser() user: any,
   ) {
+    const { autoSave = true } = generateRecipeDto; // Default: true
+    
     return this.recipesService.generateRecipe(
       generateRecipeDto,
       user.userId,
+      autoSave,
     );
   }
 
@@ -63,4 +71,3 @@ export class RecipesController {
     return this.recipesService.remove(id, user.userId);
   }
 }
-

@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
 
 export class GenerateRecipeDto {
   @IsString()
@@ -8,5 +8,8 @@ export class GenerateRecipeDto {
   @IsString()
   @IsOptional()
   style?: string;
-}
 
+  @IsBoolean()
+  @IsOptional()
+  autoSave?: boolean; // 🆕 Opción para auto-guardar (default: true)
+}

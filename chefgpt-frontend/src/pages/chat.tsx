@@ -1,15 +1,18 @@
 import { useState, useRef, useEffect } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import { generateRecipe } from "@/services/openai";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChefHat, Send, Sparkles, Loader2 } from "lucide-react";
+import { ChefHat, Send, Sparkles, Loader2, Check, BookMarked } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import type { Recipe } from "@/services/recipes";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  recipe?: any;
+  recipe?: Recipe | { title: string; ingredients: string; steps: string };
+  savedRecipeId?: number; // 🆕 ID de la receta guardada
 }
 
 export default function ChatPage() {
@@ -20,6 +23,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSaveNotification, setShowSaveNotification] = useState(false); // 🆕
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,7 +46,6 @@ export default function ChatPage() {
       return;
     }
 
-    // Add user message
     const userMessage: Message = {
       role: "user",
       content: `Ingredientes: ${input}${style ? ` | Estilo: ${style}` : ""}`,
@@ -57,18 +60,34 @@ export default function ChatPage() {
         .map((ing) => ing.trim())
         .filter((ing) => ing.length > 0);
 
+      // 🆕 Por defecto, autoSave = true (guarda automáticamente)
       const result = await generateRecipe({
         ingredients,
         style: style.trim() || undefined,
+        autoSave: true, // 🆕 Guardar automáticamente
       });
+
+      // 🆕 Verificar si la receta fue guardada (tiene id)
+      const isSaved = 'id' in result;
+      const savedRecipeId = isSaved ? result.id : undefined;
 
       const assistantMessage: Message = {
         role: "assistant",
-        content: `He creado una receta especial para ti: ${result.title}`,
+        content: isSaved 
+          ? `✅ He creado y guardado esta receta en tu perfil: ${result.title}`
+          : `He creado una receta especial para ti: ${result.title}`,
         recipe: result,
+        savedRecipeId: savedRecipeId, // 🆕
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      
+      // 🆕 Mostrar notificación de guardado
+      if (isSaved) {
+        setShowSaveNotification(true);
+        setTimeout(() => setShowSaveNotification(false), 5000);
+      }
+
       setInput("");
       setStyle("");
     } catch (err: any) {
@@ -117,9 +136,41 @@ export default function ChatPage() {
             ChefGPT
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Tu asistente de cocina con IA
+            Tu asistente de cocina con IA 🤖✨
           </p>
         </div>
+
+        {/* 🆕 Notificación de guardado */}
+        <AnimatePresence>
+          {showSaveNotification && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-center space-x-3"
+            >
+              <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
+              <div className="flex-1">
+                <p className="text-green-800 dark:text-green-200 font-semibold">
+                  ¡Receta guardada exitosamente!
+                </p>
+                <p className="text-green-700 dark:text-green-300 text-sm">
+                  Puedes encontrarla en la sección de{" "}
+                  <Link href="/recipes" className="underline font-semibold">
+                    Recetas
+                  </Link>
+                </p>
+              </div>
+              <Link
+                href="/recipes"
+                className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors flex items-center space-x-1"
+              >
+                <BookMarked className="w-4 h-4" />
+                <span>Ver recetas</span>
+              </Link>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Messages Container */}
         <div className="flex-1 overflow-y-auto mb-4 space-y-4 px-2">
@@ -130,10 +181,15 @@ export default function ChatPage() {
               className="text-center py-12"
             >
               <Sparkles className="w-12 h-12 mx-auto text-primary-500 mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
                 ¡Hola! 👨‍🍳 Soy tu chef personal. Escribe tus ingredientes y te
                 crearé una receta increíble.
               </p>
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 max-w-md mx-auto">
+                <p className="text-blue-800 dark:text-blue-200 text-sm">
+                  💡 <strong>Nuevo:</strong> Las recetas generadas se guardan automáticamente en tu perfil
+                </p>
+              </div>
             </motion.div>
           )}
 
@@ -165,9 +221,21 @@ export default function ChatPage() {
                   <p className="mb-2">{message.content}</p>
                   {message.recipe && (
                     <div className="mt-4 pt-4 border-t border-gray-300 dark:border-gray-700">
-                      <h3 className="font-bold text-lg mb-3">
-                        {message.recipe.title}
-                      </h3>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-bold text-lg">
+                          {message.recipe.title}
+                        </h3>
+                        {/* 🆕 Badge de guardado */}
+                        {message.savedRecipeId && (
+                          <Link
+                            href={`/recipes/${message.savedRecipeId}`}
+                            className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-full flex items-center space-x-1 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>Guardada</span>
+                          </Link>
+                        )}
+                      </div>
                       <div className="mb-3">
                         <h4 className="font-semibold mb-2">📝 Ingredientes:</h4>
                         <div className="bg-white dark:bg-gray-900 rounded-lg p-3">
@@ -208,6 +276,18 @@ export default function ChatPage() {
                           )}
                         </div>
                       </div>
+                      {/* 🆕 Link para ver la receta guardada */}
+                      {message.savedRecipeId && (
+                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-700">
+                          <Link
+                            href={`/recipes/${message.savedRecipeId}`}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-1"
+                          >
+                            <BookMarked className="w-4 h-4" />
+                            <span>Ver receta guardada →</span>
+                          </Link>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -225,7 +305,7 @@ export default function ChatPage() {
                 <div className="flex items-center space-x-2">
                   <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
                   <span className="text-gray-600 dark:text-gray-400">
-                    👨‍🍳 El chef está pensando...
+                    👨‍🍳 El chef está creando tu receta...
                   </span>
                 </div>
               </div>
@@ -282,7 +362,7 @@ export default function ChatPage() {
             </motion.button>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-            Presiona Enter para enviar
+            Presiona Enter para enviar • Las recetas se guardan automáticamente
           </p>
         </div>
       </div>

@@ -38,7 +38,6 @@ export class RecipesService {
       throw new NotFoundException(`Recipe with ID ${id} not found`);
     }
 
-    // Si se proporciona userId, verificar que la receta pertenezca al usuario
     if (userId && recipe.userId !== userId) {
       throw new NotFoundException(`Recipe with ID ${id} not found`);
     }
@@ -47,7 +46,10 @@ export class RecipesService {
   }
 
   async findByUserId(userId: number): Promise<Recipe[]> {
-    return this.recipesRepository.find({ where: { userId } });
+    return this.recipesRepository.find({ 
+      where: { userId },
+      order: { createdAt: 'DESC' }
+    });
   }
 
   async update(id: number, updateRecipeDto: Partial<CreateRecipeDto>, userId?: number): Promise<Recipe> {
@@ -61,10 +63,18 @@ export class RecipesService {
     await this.recipesRepository.remove(recipe);
   }
 
+  /**
+   * 🆕 Genera una receta con IA y la guarda automáticamente
+   * @param generateRecipeDto - Datos para generar la receta
+   * @param userId - ID del usuario
+   * @param autoSave - Si es true, guarda automáticamente la receta (default: true)
+   * @returns Receta generada (y opcionalmente guardada)
+   */
   async generateRecipe(
     generateRecipeDto: GenerateRecipeDto,
     userId: number,
-  ): Promise<{ title: string; ingredients: string; steps: string }> {
+    autoSave: boolean = true,
+  ): Promise<Recipe | { title: string; ingredients: string; steps: string }> {
     if (!this.geminiApiKey) {
       throw new ServiceUnavailableException(
         'GEMINI_API_KEY no está configurada. Configura GEMINI_API_KEY en el archivo .env',
@@ -85,19 +95,34 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
 }`;
 
     try {
-      return await this.generateWithGemini(prompt);
+      const generatedRecipe = await this.generateWithGemini(prompt);
+      
+      // 🆕 Si autoSave está habilitado, guardar la receta en la base de datos
+      if (autoSave) {
+        const savedRecipe = await this.create({
+          title: generatedRecipe.title,
+          ingredients: generatedRecipe.ingredients,
+          steps: generatedRecipe.steps,
+          style: style,
+          userId: userId,
+        });
+        
+        console.log(`✅ Receta generada con IA guardada automáticamente (ID: ${savedRecipe.id})`);
+        return savedRecipe;
+      }
+      
+      // Si no se auto-guarda, retornar solo los datos generados
+      return generatedRecipe;
     } catch (error: any) {
       throw new Error(`Error con Gemini: ${error.message}`);
     }
   }
 
   private async generateWithGemini(prompt: string): Promise<{ title: string; ingredients: string; steps: string }> {
-    // Intentar primero con el SDK de Gemini
     try {
       return await this.generateWithGeminiSDK(prompt);
     } catch (sdkError: any) {
       console.log('SDK de Gemini falló, intentando con API REST directa...', sdkError.message);
-      // Si el SDK falla, intentar con API REST directa
       try {
         return await this.generateWithGeminiREST(prompt);
       } catch (restError: any) {
@@ -109,7 +134,6 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
   }
 
   private async generateWithGeminiSDK(prompt: string): Promise<{ title: string; ingredients: string; steps: string }> {
-    // Importación dinámica para evitar errores si no está instalado
     let GoogleGenerativeAI: any;
     try {
       GoogleGenerativeAI = require('@google/generative-ai').GoogleGenerativeAI;
@@ -121,7 +145,6 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
 
     const genAI = new GoogleGenerativeAI(this.geminiApiKey);
     
-    // Intentar con diferentes modelos disponibles
     const modelsToTry = [
       'gemini-1.5-flash',
       'gemini-1.5-pro',
@@ -143,7 +166,6 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
 
         console.log(`Modelo ${modelName} funcionó correctamente`);
 
-        // Limpiar el texto si tiene markdown code blocks
         let cleanText = text.trim();
         if (cleanText.startsWith('```json')) {
           cleanText = cleanText.replace(/^```json\n?/, '').replace(/```\n?$/, '');
@@ -163,7 +185,6 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
   }
 
   private async generateWithGeminiREST(prompt: string): Promise<{ title: string; ingredients: string; steps: string }> {
-    // Primero, listar modelos disponibles
     let availableModels: string[] = [];
     try {
       console.log('Listando modelos disponibles...');
@@ -182,18 +203,15 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
       console.log('No se pudo listar modelos, usando lista predeterminada');
     }
 
-    // Usar modelos disponibles o lista predeterminada
     const modelsToTry = availableModels.length > 0 
       ? availableModels 
       : ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro'];
     
-    // Intentar con v1beta primero, luego v1
     const apiVersions = ['v1beta', 'v1'];
     
     for (const apiVersion of apiVersions) {
       for (const modelName of modelsToTry) {
         try {
-          // Limpiar el nombre del modelo (quitar 'models/' si está)
           const cleanModelName = modelName.replace('models/', '');
           console.log(`Intentando con API REST ${apiVersion}: ${cleanModelName}`);
           
@@ -234,7 +252,6 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
 
           console.log(`Modelo REST ${cleanModelName} (${apiVersion}) funcionó correctamente`);
 
-          // Limpiar el texto si tiene markdown code blocks
           let cleanText = text.trim();
           if (cleanText.startsWith('```json')) {
             cleanText = cleanText.replace(/^```json\n?/, '').replace(/```\n?$/, '');
@@ -256,10 +273,8 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
   private parseRecipeResponse(content: string): { title: string; ingredients: string; steps: string } {
     const recipeData = JSON.parse(content);
 
-    // Manejar diferentes formatos de respuesta
     const title = recipeData.title || recipeData.titulo || 'Receta generada';
 
-    // Convertir ingredientes a string si es array
     let ingredients = '';
     if (Array.isArray(recipeData.ingredients)) {
       ingredients = recipeData.ingredients
@@ -272,7 +287,6 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
       ingredients = recipeData.ingredients || '';
     }
 
-    // Convertir pasos a string si es array
     let steps = '';
     if (Array.isArray(recipeData.steps)) {
       steps = recipeData.steps
@@ -292,4 +306,3 @@ Por favor, devuelve la respuesta en formato JSON con la siguiente estructura:
     };
   }
 }
-
